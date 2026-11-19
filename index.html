@@ -1,0 +1,1417 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MediaString Studio - 画像・音声 文字列変換ローカルツール</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+    }
+    .mono-font {
+      font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    /* Offline fallback basic layout helpers if CDN is unreachable */
+    .checkerboard {
+      background-color: #1e293b;
+      background-image: 
+        linear-gradient(45deg, #334155 25%, transparent 25%), 
+        linear-gradient(-45deg, #334155 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #334155 75%), 
+        linear-gradient(-45deg, transparent 75%, #334155 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    }
+    .drop-active {
+      border-color: #38bdf8 !important;
+      background-color: rgba(56, 189, 248, 0.1) !important;
+    }
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+
+  <!-- Toast Notification -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- Top Header -->
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-lg font-bold tracking-tight text-white">MediaString Studio</h1>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-medium">100% ローカル処理</span>
+          </div>
+          <p class="text-xs text-slate-400">画像・音声・各種ファイルをBase64 / Data URI / 16進数 / コード用文字列に即時変換＆復元</p>
+        </div>
+      </div>
+
+      <!-- Main Mode Switcher -->
+      <div class="flex items-center bg-slate-800/90 p-1 rounded-xl border border-slate-700/70">
+        <button id="tabEncodeBtn" type="button" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all bg-sky-500 text-white shadow">
+          ファイル → 文字列 (エンコード)
+        </button>
+        <button id="tabDecodeBtn" type="button" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all text-slate-300 hover:text-white">
+          文字列 → 復元 (デコード)
+        </button>
+        <button id="tabSynthBtn" type="button" class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all text-slate-300 hover:text-white">
+          素材を作って変換
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex-1 flex flex-col gap-6">
+
+    <!-- ==================== VIEW 1: ENCODE (FILE TO STRING) ==================== -->
+    <section id="viewEncode" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      
+      <!-- Left Column: Input, Presets, Compression, Preview -->
+      <div class="lg:col-span-5 flex flex-col gap-5">
+        
+        <!-- File Drop Zone -->
+        <div id="dropZone" class="relative rounded-2xl border-2 border-dashed border-slate-700 bg-slate-900/60 hover:bg-slate-900 hover:border-sky-500/60 transition-all p-6 text-center cursor-pointer group">
+          <input id="fileInput" type="file" accept="image/*,audio/*,video/*,.svg,.json,.txt,.pdf,.wasm" class="hidden" />
+          <div class="w-12 h-12 rounded-2xl bg-slate-800 group-hover:bg-sky-500/20 text-sky-400 mx-auto flex items-center justify-center mb-3 transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+          </div>
+          <p class="text-sm font-semibold text-slate-200 mb-1">クリックしてファイルを選択、またはドラッグ＆ドロップ</p>
+          <p class="text-xs text-slate-400">画像 (PNG, JPG, WebP, GIF, SVG)・音声 (MP3, WAV, OGG, M4A) ほか対応</p>
+          <p class="text-[11px] text-sky-400/90 mt-2">💡 画面上で <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700">Ctrl + V</kbd> でクリップボードの画像も直接貼り付け可能</p>
+        </div>
+
+        <!-- Instant Sample Generator Bar -->
+        <div class="rounded-2xl bg-slate-900 border border-slate-800 p-4">
+          <div class="flex items-center justify-between mb-2.5">
+            <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              ワンクリック・サンプル読み込み（テスト・埋め込み素材用）
+            </span>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <button id="sampleBadgeBtn" type="button" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700/80 transition flex items-center justify-center gap-1.5">
+              <span>🎨</span> アイコン画像
+            </button>
+            <button id="sampleChimeBtn" type="button" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700/80 transition flex items-center justify-center gap-1.5">
+              <span>🔔</span> 正解ピンポン音
+            </button>
+            <button id="sampleJumpBtn" type="button" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700/80 transition flex items-center justify-center gap-1.5">
+              <span>🚀</span> レトロ効果音
+            </button>
+            <button id="sampleSvgBtn" type="button" class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700/80 transition flex items-center justify-center gap-1.5">
+              <span>✨</span> ベクターSVG
+            </button>
+          </div>
+        </div>
+
+        <!-- Image Optimization Options (Shown when image is loaded) -->
+        <div id="imageOptimizePanel" class="rounded-2xl bg-slate-900 border border-slate-800 p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+              </svg>
+              画像の軽量化・文字列短縮オプション
+            </h2>
+            <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+              <input id="enableImageOptimize" type="checkbox" class="rounded border-slate-600 text-sky-500 focus:ring-sky-500 bg-slate-800" />
+              <span>圧縮・リサイズを有効化</span>
+            </label>
+          </div>
+
+          <div id="imageOptimizeControls" class="grid grid-cols-1 sm:grid-cols-3 gap-3 opacity-50 pointer-events-none transition-opacity">
+            <div>
+              <label for="optFormatSelect" class="block text-[11px] text-slate-400 mb-1">出力画像形式</label>
+              <select id="optFormatSelect" class="w-full rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200 px-2.5 py-1.5">
+                <option value="image/webp">WebP (高圧縮・推奨)</option>
+                <option value="image/jpeg">JPEG (写真向け)</option>
+                <option value="image/png">PNG (透過保持)</option>
+              </select>
+            </div>
+            <div>
+              <label for="optMaxWidthSelect" class="block text-[11px] text-slate-400 mb-1">最大横幅 (px)</label>
+              <select id="optMaxWidthSelect" class="w-full rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200 px-2.5 py-1.5">
+                <option value="0">元のサイズを維持</option>
+                <option value="1280">最大 1280px</option>
+                <option value="800">最大 800px</option>
+                <option value="512" selected>最大 512px</option>
+                <option value="256">最大 256px (アイコン)</option>
+                <option value="128">最大 128px (超軽量)</option>
+              </select>
+            </div>
+            <div>
+              <label for="optQualityRange" class="block text-[11px] text-slate-400 mb-1">画質: <span id="optQualityLabel" class="text-sky-400 font-semibold">80%</span></label>
+              <input id="optQualityRange" type="range" min="10" max="100" step="5" value="80" class="w-full accent-sky-500 mt-1" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Media Preview & File Metadata Card -->
+        <div class="rounded-2xl bg-slate-900 border border-slate-800 p-4 flex flex-col gap-4">
+          <div class="flex items-center justify-between">
+            <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">メディアプレビュー & 解析情報</h2>
+            <span id="previewCategoryBadge" class="text-xs px-2.5 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 font-medium">IMAGE</span>
+          </div>
+
+          <!-- Visual Preview Area -->
+          <div class="rounded-xl overflow-hidden border border-slate-800 checkerboard min-h-[190px] max-h-[280px] flex flex-col items-center justify-center p-4 relative">
+            <img id="encodeImagePreview" src="" alt="プレビュー画像" class="max-h-[240px] max-w-full h-auto object-contain rounded shadow-md" />
+            
+            <div id="encodeAudioPreviewWrap" class="hidden w-full flex flex-col items-center gap-3 p-2">
+              <canvas id="audioWaveCanvas" width="420" height="90" class="w-full h-24 rounded-lg bg-slate-950/90 border border-slate-800"></canvas>
+              <audio id="encodeAudioPlayer" controls class="w-full h-10"></audio>
+            </div>
+
+            <div id="encodeGenericPreviewWrap" class="hidden text-center p-4">
+              <div class="w-12 h-12 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center mx-auto mb-2">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <p id="genericFileName" class="text-sm font-medium text-slate-200"></p>
+              <p class="text-xs text-slate-400 mt-1">バイナリデータを文字列に変換しました</p>
+            </div>
+          </div>
+
+          <!-- Stats Grid -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-left">
+            <div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+              <div class="text-[11px] text-slate-400">ファイル名</div>
+              <div id="metaFileName" class="text-xs font-semibold text-slate-200 truncate mt-0.5">-</div>
+            </div>
+            <div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+              <div class="text-[11px] text-slate-400">MIMEタイプ</div>
+              <div id="metaMimeType" class="text-xs font-semibold text-sky-300 truncate mt-0.5 mono-font">-</div>
+            </div>
+            <div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+              <div class="text-[11px] text-slate-400">元データ容量</div>
+              <div id="metaBinarySize" class="text-xs font-semibold text-slate-200 mt-0.5">-</div>
+            </div>
+            <div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+              <div class="text-[11px] text-slate-400">文字列長 (文字数)</div>
+              <div id="metaStringLength" class="text-xs font-semibold text-emerald-300 mt-0.5 mono-font">-</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: String Output Formats, Copy & Export, History -->
+      <div class="lg:col-span-7 flex flex-col gap-5">
+        
+        <div class="rounded-2xl bg-slate-900 border border-slate-800 p-5 flex flex-col gap-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 class="text-base font-bold text-white">変換された文字列 (エンコード結果)</h2>
+              <p class="text-xs text-slate-400">用途に合わせて出力フォーマットを切り替えられます</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="inline-flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-700">
+                <input id="lineWrapToggle" type="checkbox" class="rounded border-slate-600 text-sky-500 bg-slate-900" />
+                <span>76文字で改行</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Output Format Selector Tabs -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 bg-slate-950 p-1.5 rounded-xl border border-slate-800" id="formatSelectorGroup">
+            <button type="button" data-format="datauri" class="format-btn px-2.5 py-2 rounded-lg text-xs font-semibold bg-sky-500 text-white transition">
+              Data URI
+            </button>
+            <button type="button" data-format="rawbase64" class="format-btn px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition">
+              純粋なBase64
+            </button>
+            <button type="button" data-format="htmltag" class="format-btn px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition">
+              HTMLタグ
+            </button>
+            <button type="button" data-format="jscode" class="format-btn px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition">
+              JSコード
+            </button>
+            <button type="button" data-format="cssurl" class="format-btn px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition">
+              CSS url()
+            </button>
+            <button type="button" data-format="hex" class="format-btn px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition">
+              Hex / 配列
+            </button>
+          </div>
+
+          <!-- Format Help Banner -->
+          <div id="formatExplanation" class="text-xs text-slate-300 bg-slate-950/90 border border-slate-800/90 rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2">
+            <span>HTMLの <code class="text-sky-300 mono-font">src=""</code> やJavaScriptの <code class="text-sky-300 mono-font">Audio()</code> にそのまま貼り付けられる標準形式です。</span>
+          </div>
+
+          <!-- Output Textarea -->
+          <div class="relative">
+            <textarea id="encodedOutputText" readonly rows="10" class="w-full rounded-xl bg-slate-950 border border-slate-800 p-3.5 text-xs text-slate-200 mono-font focus:outline-none focus:border-sky-500 break-all leading-relaxed" placeholder="ここに変換された文字列が表示されます..."></textarea>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex flex-wrap items-center gap-2.5">
+            <button id="copyOutputBtn" type="button" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs sm:text-sm transition shadow-lg shadow-sky-500/20">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              クリップボードにコピー
+            </button>
+
+            <button id="downloadTxtBtn" type="button" class="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs sm:text-sm border border-slate-700 transition">
+              <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              .txt ファイル保存
+            </button>
+
+            <button id="sendToDecodeBtn" type="button" class="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs sm:text-sm border border-slate-700 transition">
+              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
+              復元テストへ送る
+            </button>
+          </div>
+        </div>
+
+        <!-- Conversion History List -->
+        <div class="rounded-2xl bg-slate-900 border border-slate-800 p-5 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-bold text-white">変換ストック履歴（複数ファイル切り替え）</h3>
+              <p class="text-xs text-slate-400">変換した画像・音声を一時ストックしてワンクリックで呼び出せます</p>
+            </div>
+            <button id="clearHistoryBtn" type="button" class="text-xs text-slate-400 hover:text-rose-400 transition px-2 py-1 rounded">
+              履歴をクリア
+            </button>
+          </div>
+          <div id="historyListContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto pr-1"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 2: DECODE (STRING TO FILE) ==================== -->
+    <section id="viewDecode" class="hidden grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      
+      <!-- Left: String Input -->
+      <div class="lg:col-span-6 rounded-2xl bg-slate-900 border border-slate-800 p-5 flex flex-col gap-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-bold text-white">文字列を入力して画像・音声に復元</h2>
+            <p class="text-xs text-slate-400">Data URI (<code class="mono-font text-sky-300">data:...</code>)、純粋なBase64文字列、または16進数(Hex)に対応</p>
+          </div>
+          <button id="clearDecodeInputBtn" type="button" class="text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">
+            クリア
+          </button>
+        </div>
+
+        <textarea id="decodeInputText" rows="11" class="w-full rounded-xl bg-slate-950 border border-slate-800 p-3.5 text-xs text-slate-200 mono-font focus:outline-none focus:border-sky-500 break-all leading-relaxed" placeholder="ここに Base64 文字列 や data:image/png;base64,... を貼り付けてください（ヘッダー無しのBase64でも先頭バイトから画像・音声形式を自動判別します）"></textarea>
+
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <label for="manualMimeSelect" class="text-xs text-slate-400">形式の強制指定:</label>
+            <select id="manualMimeSelect" class="rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200 px-2.5 py-1.5">
+              <option value="auto">自動判別 (Magic Bytes解析)</option>
+              <option value="image/png">画像: image/png</option>
+              <option value="image/jpeg">画像: image/jpeg</option>
+              <option value="image/webp">画像: image/webp</option>
+              <option value="image/gif">画像: image/gif</option>
+              <option value="image/svg+xml">画像: image/svg+xml</option>
+              <option value="audio/wav">音声: audio/wav</option>
+              <option value="audio/mpeg">音声: audio/mpeg (MP3)</option>
+              <option value="audio/ogg">音声: audio/ogg</option>
+            </select>
+          </div>
+
+          <button id="runDecodeBtn" type="button" class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm transition shadow-lg shadow-emerald-500/20">
+            文字列から復元する
+          </button>
+        </div>
+      </div>
+
+      <!-- Right: Restored Preview & Download -->
+      <div class="lg:col-span-6 rounded-2xl bg-slate-900 border border-slate-800 p-5 flex flex-col gap-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-bold text-white">復元プレビュー＆ファイル書き出し</h2>
+            <p id="decodeStatusText" class="text-xs text-slate-400">文字列を入力すると自動で判別・復元します</p>
+          </div>
+          <span id="decodedMimeBadge" class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 mono-font">-</span>
+        </div>
+
+        <div class="rounded-xl checkerboard border border-slate-800 min-h-[240px] flex flex-col items-center justify-center p-4">
+          <img id="decodedImagePreview" src="" alt="復元された画像" class="hidden max-h-[260px] max-w-full h-auto object-contain rounded shadow-lg" />
+          
+          <div id="decodedAudioWrap" class="hidden w-full flex flex-col items-center gap-3 p-3">
+            <div class="text-xs text-emerald-300 font-medium">🔊 音声データが復元されました</div>
+            <audio id="decodedAudioPlayer" controls class="w-full"></audio>
+          </div>
+
+          <div id="decodedPlaceholder" class="text-center text-xs text-slate-400">
+            左側のボックスに文字列を貼り付けるか、「復元する」を押してください
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+            <div class="text-[11px] text-slate-400">推定バイナリサイズ</div>
+            <div id="decodedSizeInfo" class="text-sm font-bold text-slate-200 mt-0.5">-</div>
+          </div>
+          <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+            <div class="text-[11px] text-slate-400">先頭バイト (Hexシグネチャ)</div>
+            <div id="decodedMagicInfo" class="text-xs font-semibold text-sky-300 mono-font mt-1 truncate">-</div>
+          </div>
+        </div>
+
+        <button id="downloadDecodedFileBtn" type="button" class="w-full py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          復元したファイルをダウンロード保存
+        </button>
+      </div>
+
+    </section>
+
+    <!-- ==================== VIEW 3: SYNTH & ICON GENERATOR ==================== -->
+    <section id="viewSynth" class="hidden grid-cols-1 md:grid-cols-2 gap-6 items-start">
+      
+      <!-- Left: Sound Effect Generator -> WAV Base64 -->
+      <div class="rounded-2xl bg-slate-900 border border-slate-800 p-5 flex flex-col gap-4">
+        <div>
+          <span class="text-[11px] font-semibold uppercase tracking-wider text-amber-400">Web Audio WAV Synthesizer</span>
+          <h2 class="text-base font-bold text-white mt-0.5">効果音(WAV)を作ってすぐ文字列化</h2>
+          <p class="text-xs text-slate-400">外部ファイル不要で、自作アプリやクイズに埋め込める効果音を生成してBase64文字列に変換します。</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="synthWaveType" class="block text-xs text-slate-400 mb-1">波形タイプ</label>
+            <select id="synthWaveType" class="w-full rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200 px-3 py-2">
+              <option value="sine">サイン波 (クリア・チャイム)</option>
+              <option value="square">矩形波 (レトロゲーム風)</option>
+              <option value="triangle">三角波 (柔らかい音)</option>
+              <option value="sawtooth">ノコギリ波 (ブザー・効果音)</option>
+            </select>
+          </div>
+          <div>
+            <label for="synthPresetSelect" class="block text-xs text-slate-400 mb-1">プリセットパターン</label>
+            <select id="synthPresetSelect" class="w-full rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200 px-3 py-2">
+              <option value="chime">正解ピンポン (2音上昇)</option>
+              <option value="buzzer">不正解ブブー (低音2連)</option>
+              <option value="jump">ジャンプ・決定音 (スイープ上昇)</option>
+              <option value="coin">コイン獲得 (キラッ)</option>
+              <option value="levelup">ファンファーレ (3和音アルペジオ)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label for="synthFreqRange" class="block text-xs text-slate-400 mb-1">基本周波数: <span id="synthFreqVal" class="text-sky-400 font-bold">660 Hz</span></label>
+            <input id="synthFreqRange" type="range" min="150" max="1600" step="10" value="660" class="w-full accent-sky-500" />
+          </div>
+          <div>
+            <label for="synthDurationRange" class="block text-xs text-slate-400 mb-1">長さ: <span id="synthDurationVal" class="text-sky-400 font-bold">0.45 秒</span></label>
+            <input id="synthDurationRange" type="range" min="0.15" max="1.5" step="0.05" value="0.45" class="w-full accent-sky-500" />
+          </div>
+        </div>
+
+        <button id="generateSynthBtn" type="button" class="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs sm:text-sm transition shadow-lg shadow-amber-500/20">
+          🔊 効果音を生成して文字列に変換する
+        </button>
+      </div>
+
+      <!-- Right: Badge / Stamp Image Generator -> PNG Base64 -->
+      <div class="rounded-2xl bg-slate-900 border border-slate-800 p-5 flex flex-col gap-4">
+        <div>
+          <span class="text-[11px] font-semibold uppercase tracking-wider text-sky-400">Canvas Icon & Stamp Maker</span>
+          <h2 class="text-base font-bold text-white mt-0.5">スタンプ・アイコン画像を作ってすぐ文字列化</h2>
+          <p class="text-xs text-slate-400">文字や背景色を指定してPNGアイコンを描画し、そのままBase64文字列として出力します。</p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label for="stampTextInput" class="block text-xs text-slate-400 mb-1">スタンプ文字 / 絵文字</label>
+            <input id="stampTextInput" type="text" value="合格💮" maxlength="10" class="w-full rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-100 px-3 py-2" />
+          </div>
+          <div>
+            <label for="stampBgColor" class="block text-xs text-slate-400 mb-1">背景カラー</label>
+            <input id="stampBgColor" type="color" value="#0284c7" class="w-full h-9 rounded-lg bg-slate-800 border border-slate-700 p-1 cursor-pointer" />
+          </div>
+          <div>
+            <label for="stampShapeSelect" class="block text-xs text-slate-400 mb-1">形状スタイル</label>
+            <select id="stampShapeSelect" class="w-full rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200 px-3 py-2">
+              <option value="rounded">角丸スクエア</option>
+              <option value="circle">サークルバッジ</option>
+              <option value="seal">丸印鑑風スタンプ</option>
+            </select>
+          </div>
+        </div>
+
+        <button id="generateStampBtn" type="button" class="w-full py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs sm:text-sm transition shadow-lg shadow-sky-500/20">
+          🎨 アイコン画像を生成して文字列に変換する
+        </button>
+      </div>
+
+    </section>
+
+  </main>
+
+  <script>
+    (function () {
+      // ==================== APPLICATION STATE ====================
+      const state = {
+        activeView: 'encode', // 'encode' | 'decode' | 'synth'
+        outputFormat: 'datauri', // 'datauri' | 'rawbase64' | 'htmltag' | 'jscode' | 'cssurl' | 'hex'
+        lineWrap: false,
+        optimizeImage: false,
+        optFormat: 'image/webp',
+        optMaxWidth: 512,
+        optQuality: 0.8,
+        currentItem: null, // { id, name, mime, size, dataUri, rawBase64, bytes, category }
+        decodedItem: null, // { mime, dataUri, size, magicHex, ext }
+        history: []
+      };
+
+      // ==================== DOM ELEMENTS ====================
+      const tabEncodeBtn = document.getElementById('tabEncodeBtn');
+      const tabDecodeBtn = document.getElementById('tabDecodeBtn');
+      const tabSynthBtn = document.getElementById('tabSynthBtn');
+      const viewEncode = document.getElementById('viewEncode');
+      const viewDecode = document.getElementById('viewDecode');
+      const viewSynth = document.getElementById('viewSynth');
+
+      const dropZone = document.getElementById('dropZone');
+      const fileInput = document.getElementById('fileInput');
+      const sampleBadgeBtn = document.getElementById('sampleBadgeBtn');
+      const sampleChimeBtn = document.getElementById('sampleChimeBtn');
+      const sampleJumpBtn = document.getElementById('sampleJumpBtn');
+      const sampleSvgBtn = document.getElementById('sampleSvgBtn');
+
+      const enableImageOptimize = document.getElementById('enableImageOptimize');
+      const imageOptimizeControls = document.getElementById('imageOptimizeControls');
+      const optFormatSelect = document.getElementById('optFormatSelect');
+      const optMaxWidthSelect = document.getElementById('optMaxWidthSelect');
+      const optQualityRange = document.getElementById('optQualityRange');
+      const optQualityLabel = document.getElementById('optQualityLabel');
+
+      const previewCategoryBadge = document.getElementById('previewCategoryBadge');
+      const encodeImagePreview = document.getElementById('encodeImagePreview');
+      const encodeAudioPreviewWrap = document.getElementById('encodeAudioPreviewWrap');
+      const audioWaveCanvas = document.getElementById('audioWaveCanvas');
+      const encodeAudioPlayer = document.getElementById('encodeAudioPlayer');
+      const encodeGenericPreviewWrap = document.getElementById('encodeGenericPreviewWrap');
+      const genericFileName = document.getElementById('genericFileName');
+
+      const metaFileName = document.getElementById('metaFileName');
+      const metaMimeType = document.getElementById('metaMimeType');
+      const metaBinarySize = document.getElementById('metaBinarySize');
+      const metaStringLength = document.getElementById('metaStringLength');
+
+      const lineWrapToggle = document.getElementById('lineWrapToggle');
+      const formatSelectorGroup = document.getElementById('formatSelectorGroup');
+      const formatExplanation = document.getElementById('formatExplanation');
+      const encodedOutputText = document.getElementById('encodedOutputText');
+      const copyOutputBtn = document.getElementById('copyOutputBtn');
+      const downloadTxtBtn = document.getElementById('downloadTxtBtn');
+      const sendToDecodeBtn = document.getElementById('sendToDecodeBtn');
+      const historyListContainer = document.getElementById('historyListContainer');
+      const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+
+      const decodeInputText = document.getElementById('decodeInputText');
+      const clearDecodeInputBtn = document.getElementById('clearDecodeInputBtn');
+      const manualMimeSelect = document.getElementById('manualMimeSelect');
+      const runDecodeBtn = document.getElementById('runDecodeBtn');
+      const decodeStatusText = document.getElementById('decodeStatusText');
+      const decodedMimeBadge = document.getElementById('decodedMimeBadge');
+      const decodedImagePreview = document.getElementById('decodedImagePreview');
+      const decodedAudioWrap = document.getElementById('decodedAudioWrap');
+      const decodedAudioPlayer = document.getElementById('decodedAudioPlayer');
+      const decodedPlaceholder = document.getElementById('decodedPlaceholder');
+      const decodedSizeInfo = document.getElementById('decodedSizeInfo');
+      const decodedMagicInfo = document.getElementById('decodedMagicInfo');
+      const downloadDecodedFileBtn = document.getElementById('downloadDecodedFileBtn');
+
+      const synthWaveType = document.getElementById('synthWaveType');
+      const synthPresetSelect = document.getElementById('synthPresetSelect');
+      const synthFreqRange = document.getElementById('synthFreqRange');
+      const synthFreqVal = document.getElementById('synthFreqVal');
+      const synthDurationRange = document.getElementById('synthDurationRange');
+      const synthDurationVal = document.getElementById('synthDurationVal');
+      const generateSynthBtn = document.getElementById('generateSynthBtn');
+
+      const stampTextInput = document.getElementById('stampTextInput');
+      const stampBgColor = document.getElementById('stampBgColor');
+      const stampShapeSelect = document.getElementById('stampShapeSelect');
+      const generateStampBtn = document.getElementById('generateStampBtn');
+
+      const toastContainer = document.getElementById('toastContainer');
+
+      // ==================== UTILITY FUNCTIONS ====================
+      function showToast(message, type) {
+        const el = document.createElement('div');
+        const bgClass = type === 'error'
+          ? 'bg-rose-600 text-white border-rose-400'
+          : 'bg-slate-800 text-sky-300 border-sky-500/40';
+        el.className = 'px-4 py-2.5 rounded-xl border shadow-xl text-xs font-semibold transition-all duration-300 ' + bgClass;
+        el.textContent = message;
+        toastContainer.appendChild(el);
+        setTimeout(function () {
+          el.style.opacity = '0';
+          setTimeout(function () {
+            if (el.parentNode) el.parentNode.removeChild(el);
+          }, 300);
+        }, 2400);
+      }
+
+      function formatBytes(bytes) {
+        if (!bytes || bytes <= 0) return '0 B';
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+      }
+
+      function uint8ToBase64(uint8) {
+        let binary = '';
+        const chunkSize = 0x8000;
+        for (let i = 0; i < uint8.length; i += chunkSize) {
+          const sub = uint8.subarray(i, i + chunkSize);
+          binary += String.fromCharCode.apply(null, sub);
+        }
+        return btoa(binary);
+      }
+
+      function base64ToUint8(b64) {
+        const clean = b64.replace(/[\r\n\s]/g, '');
+        const binStr = atob(clean);
+        const len = binStr.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binStr.charCodeAt(i);
+        }
+        return bytes;
+      }
+
+      function detectCategory(mime) {
+        if (!mime) return 'OTHER';
+        if (mime.startsWith('image/')) return 'IMAGE';
+        if (mime.startsWith('audio/')) return 'AUDIO';
+        return 'FILE';
+      }
+
+      function detectMimeFromBytes(bytes) {
+        if (!bytes || bytes.length < 4) return 'application/octet-stream';
+        const b0 = bytes[0], b1 = bytes[1], b2 = bytes[2], b3 = bytes[3];
+        if (b0 === 0x89 && b1 === 0x50 && b2 === 0x4E && b3 === 0x47) return 'image/png';
+        if (b0 === 0xFF && b1 === 0xD8 && b2 === 0xFF) return 'image/jpeg';
+        if (b0 === 0x47 && b1 === 0x49 && b2 === 0x46 && b3 === 0x38) return 'image/gif';
+        if (b0 === 0x52 && b1 === 0x49 && b2 === 0x46 && b3 === 0x46 && bytes.length >= 12) {
+          const f0 = bytes[8], f1 = bytes[9], f2 = bytes[10], f3 = bytes[11];
+          if (f0 === 0x57 && f1 === 0x41 && f2 === 0x56 && f3 === 0x45) return 'audio/wav';
+          if (f0 === 0x57 && f1 === 0x45 && f2 === 0x42 && f3 === 0x50) return 'image/webp';
+        }
+        if ((b0 === 0x49 && b1 === 0x44 && b2 === 0x33) || (b0 === 0xFF && (b1 & 0xE0) === 0xE0)) return 'audio/mpeg';
+        if (b0 === 0x4F && b1 === 0x67 && b2 === 0x67 && b3 === 0x53) return 'audio/ogg';
+        // Check SVG text header
+        try {
+          const headText = new TextDecoder().decode(bytes.slice(0, 120)).trim();
+          if (headText.includes('<svg') || headText.startsWith('<?xml')) return 'image/svg+xml';
+        } catch (e) {}
+        return 'application/octet-stream';
+      }
+
+      function mimeToExtension(mime) {
+        const map = {
+          'image/png': 'png',
+          'image/jpeg': 'jpg',
+          'image/webp': 'webp',
+          'image/gif': 'gif',
+          'image/svg+xml': 'svg',
+          'audio/wav': 'wav',
+          'audio/mpeg': 'mp3',
+          'audio/ogg': 'ogg',
+          'audio/mp4': 'm4a'
+        };
+        return map[mime] || 'bin';
+      }
+
+      // ==================== VIEW NAVIGATION ====================
+      function switchView(viewName) {
+        state.activeView = viewName;
+        viewEncode.classList.add('hidden');
+        viewDecode.classList.add('hidden');
+        viewDecode.classList.remove('grid');
+        viewSynth.classList.add('hidden');
+        viewSynth.classList.remove('grid');
+
+        tabEncodeBtn.className = 'px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all text-slate-300 hover:text-white';
+        tabDecodeBtn.className = 'px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all text-slate-300 hover:text-white';
+        tabSynthBtn.className = 'px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all text-slate-300 hover:text-white';
+
+        if (viewName === 'encode') {
+          viewEncode.classList.remove('hidden');
+          tabEncodeBtn.className = 'px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all bg-sky-500 text-white shadow';
+        } else if (viewName === 'decode') {
+          viewDecode.classList.remove('hidden');
+          viewDecode.classList.add('grid');
+          tabDecodeBtn.className = 'px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all bg-sky-500 text-white shadow';
+        } else if (viewName === 'synth') {
+          viewSynth.classList.remove('hidden');
+          viewSynth.classList.add('grid');
+          tabSynthBtn.className = 'px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all bg-sky-500 text-white shadow';
+        }
+      }
+
+      tabEncodeBtn.addEventListener('click', function () { switchView('encode'); });
+      tabDecodeBtn.addEventListener('click', function () { switchView('decode'); });
+      tabSynthBtn.addEventListener('click', function () { switchView('synth'); });
+
+      // ==================== WAVEFORM VISUALIZER ====================
+      function drawWaveformFromBytes(bytes) {
+        const ctx = audioWaveCanvas.getContext('2d');
+        const w = audioWaveCanvas.width;
+        const h = audioWaveCanvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        // Background grid line
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, h / 2);
+        ctx.lineTo(w, h / 2);
+        ctx.stroke();
+
+        if (!bytes || bytes.length < 50) return;
+
+        const barCount = 64;
+        const barWidth = (w - (barCount - 1) * 2) / barCount;
+        const startOffset = Math.min(44, bytes.length - 1);
+        const step = Math.max(1, Math.floor((bytes.length - startOffset) / barCount));
+
+        for (let i = 0; i < barCount; i++) {
+          let sum = 0;
+          let count = 0;
+          const idxStart = startOffset + i * step;
+          for (let j = 0; j < step && (idxStart + j) < bytes.length; j += 2) {
+            const val = Math.abs(bytes[idxStart + j] - 128) / 128;
+            sum += val;
+            count++;
+          }
+          const avg = count > 0 ? (sum / count) : 0.1;
+          const amp = Math.max(6, Math.min(h - 10, avg * h * 1.4));
+          const x = i * (barWidth + 2);
+          const y = (h - amp) / 2;
+
+          const grad = ctx.createLinearGradient(0, y, 0, y + amp);
+          grad.addColorStop(0, '#38bdf8');
+          grad.addColorStop(1, '#6366f1');
+          ctx.fillStyle = grad;
+          ctx.fillRect(x, y, barWidth, amp);
+        }
+      }
+
+      // ==================== OUTPUT FORMATTER ====================
+      function buildFormattedOutput() {
+        const item = state.currentItem;
+        if (!item) return '';
+
+        const wrapStr = function (str) {
+          if (!state.lineWrap) return str;
+          return str.replace(/(.{76})/g, '$1\n');
+        };
+
+        const fmt = state.outputFormat;
+        const explanations = {
+          datauri: 'HTMLの src="" やJavaScriptの Audio() にそのまま貼り付けられる標準 Data URI 形式です。',
+          rawbase64: '先頭の data:...;base64, を除いた純粋なBase64文字列のみを出力します。',
+          htmltag: 'Webページにそのまま貼り付けて表示・再生できる <img> / <audio> タグ形式です。',
+          jscode: 'JavaScriptコードやGAS内に定数として埋め込み、すぐに呼び出せるコードスニペットです。',
+          cssurl: 'CSSの background-image などにそのまま指定できる url("data:...") 形式です。',
+          hex: 'バイナリの中身を16進数ダンプおよび JavaScript の Uint8Array 配列として出力します。'
+        };
+        formatExplanation.textContent = explanations[fmt] || '';
+
+        if (fmt === 'datauri') {
+          return wrapStr(item.dataUri);
+        }
+        if (fmt === 'rawbase64') {
+          return wrapStr(item.rawBase64);
+        }
+        if (fmt === 'htmltag') {
+          if (item.category === 'IMAGE') {
+            return '<img src="' + item.dataUri + '" alt="' + item.name + '" />';
+          } else if (item.category === 'AUDIO') {
+            return '<audio controls src="' + item.dataUri + '"></audio>';
+          }
+          return '<a href="' + item.dataUri + '" download="' + item.name + '">' + item.name + ' をダウンロード</a>';
+        }
+        if (fmt === 'jscode') {
+          if (item.category === 'AUDIO') {
+            return '// 音声のBase64文字列埋め込み & 再生コード\nconst soundDataUri = "' + item.dataUri + '";\nconst playSound = () => new Audio(soundDataUri).play();';
+          } else if (item.category === 'IMAGE') {
+            return '// 画像のBase64文字列埋め込みコード\nconst imageDataUri = "' + item.dataUri + '";\nconst img = new Image();\nimg.src = imageDataUri;';
+          }
+          return 'const fileDataUri = "' + item.dataUri + '";';
+        }
+        if (fmt === 'cssurl') {
+          return 'background-image: url("' + item.dataUri + '");\nbackground-repeat: no-repeat;\nbackground-size: contain;';
+        }
+        if (fmt === 'hex') {
+          const maxPreviewBytes = Math.min(item.bytes.length, 512);
+          const hexParts = [];
+          const decParts = [];
+          for (let i = 0; i < maxPreviewBytes; i++) {
+            hexParts.push(item.bytes[i].toString(16).padStart(2, '0').toUpperCase());
+            decParts.push(item.bytes[i]);
+          }
+          const suffix = item.bytes.length > maxPreviewBytes
+            ? ' /* ... 以降 ' + (item.bytes.length - maxPreviewBytes) + ' bytes 省略 */'
+            : '';
+          return '// Hex Dump (先頭 ' + maxPreviewBytes + ' bytes):\n' +
+            hexParts.join(' ') + '\n\n' +
+            '// Uint8Array 形式:\nconst bytes = new Uint8Array([' + decParts.join(', ') + ']);' + suffix;
+        }
+        return item.dataUri;
+      }
+
+      function renderEncodeView() {
+        const item = state.currentItem;
+        if (!item) return;
+
+        previewCategoryBadge.textContent = item.category;
+        metaFileName.textContent = item.name;
+        metaMimeType.textContent = item.mime;
+        metaBinarySize.textContent = formatBytes(item.size);
+
+        const formattedText = buildFormattedOutput();
+        encodedOutputText.value = formattedText;
+        metaStringLength.textContent = formattedText.length.toLocaleString() + ' 文字';
+
+        // Update visual preview
+        encodeImagePreview.classList.add('hidden');
+        encodeAudioPreviewWrap.classList.add('hidden');
+        encodeGenericPreviewWrap.classList.add('hidden');
+
+        if (item.category === 'IMAGE') {
+          encodeImagePreview.src = item.dataUri;
+          encodeImagePreview.classList.remove('hidden');
+        } else if (item.category === 'AUDIO') {
+          encodeAudioPlayer.src = item.dataUri;
+          encodeAudioPreviewWrap.classList.remove('hidden');
+          drawWaveformFromBytes(item.bytes);
+        } else {
+          genericFileName.textContent = item.name + ' (' + formatBytes(item.size) + ')';
+          encodeGenericPreviewWrap.classList.remove('hidden');
+        }
+
+        renderHistoryList();
+      }
+
+      function addToHistory(item) {
+        state.history = state.history.filter(function (h) { return h.name !== item.name || h.size !== item.size; });
+        state.history.unshift(item);
+        if (state.history.length > 8) state.history.pop();
+        renderHistoryList();
+      }
+
+      function renderHistoryList() {
+        historyListContainer.innerHTML = '';
+        if (state.history.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'text-xs text-slate-500 col-span-2 py-3 text-center';
+          empty.textContent = 'まだ履歴がありません';
+          historyListContainer.appendChild(empty);
+          return;
+        }
+
+        state.history.forEach(function (h) {
+          const isCurrent = state.currentItem && state.currentItem.id === h.id;
+          const card = document.createElement('button');
+          card.type = 'button';
+          card.className = 'flex items-center justify-between gap-2 p-2.5 rounded-xl border text-left transition ' +
+            (isCurrent
+              ? 'bg-sky-500/15 border-sky-500/50 text-white'
+              : 'bg-slate-950/70 border-slate-800 hover:border-slate-700 text-slate-300');
+
+          const icon = h.category === 'IMAGE' ? '🖼️' : (h.category === 'AUDIO' ? '🔊' : '📄');
+          card.innerHTML =
+            '<div class="flex items-center gap-2 min-w-0">' +
+              '<span class="text-base">' + icon + '</span>' +
+              '<div class="min-w-0">' +
+                '<div class="text-xs font-semibold truncate">' + h.name + '</div>' +
+                '<div class="text-[10px] text-slate-400 mono-font">' + h.mime + ' ・ ' + formatBytes(h.size) + '</div>' +
+              '</div>' +
+            '</div>' +
+            '<span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-sky-300 shrink-0">選択</span>';
+
+          card.addEventListener('click', function () {
+            state.currentItem = h;
+            renderEncodeView();
+            showToast('「' + h.name + '」を読み込みました');
+          });
+          historyListContainer.appendChild(card);
+        });
+      }
+
+      // ==================== FILE & IMAGE PROCESSING ====================
+      function loadBytesIntoEncoder(name, mime, uint8Bytes) {
+        const rawBase64 = uint8ToBase64(uint8Bytes);
+        const safeMime = mime || detectMimeFromBytes(uint8Bytes);
+        const dataUri = 'data:' + safeMime + ';base64,' + rawBase64;
+        const item = {
+          id: 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+          name: name,
+          mime: safeMime,
+          size: uint8Bytes.length,
+          dataUri: dataUri,
+          rawBase64: rawBase64,
+          bytes: uint8Bytes,
+          category: detectCategory(safeMime)
+        };
+        state.currentItem = item;
+        addToHistory(item);
+        renderEncodeView();
+      }
+
+      function processImageWithOptimization(file, originalBytes) {
+        if (!state.optimizeImage || file.type === 'image/svg+xml') {
+          loadBytesIntoEncoder(file.name, file.type, originalBytes);
+          return;
+        }
+
+        const blob = new Blob([originalBytes], { type: file.type });
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = function () {
+          URL.revokeObjectURL(url);
+          let targetW = img.width;
+          let targetH = img.height;
+          const maxW = parseInt(optMaxWidthSelect.value, 10);
+          if (maxW > 0 && targetW > maxW) {
+            const ratio = maxW / targetW;
+            targetW = maxW;
+            targetH = Math.max(1, Math.round(img.height * ratio));
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+
+          const outMime = optFormatSelect.value;
+          const quality = parseInt(optQualityRange.value, 10) / 100;
+          const dataUri = canvas.toDataURL(outMime, quality);
+          const b64Part = dataUri.split(',')[1] || '';
+          const outBytes = base64ToUint8(b64Part);
+          const ext = mimeToExtension(outMime);
+          const baseName = file.name.replace(/\.[^.]+$/, '');
+          loadBytesIntoEncoder(baseName + '_opt.' + ext, outMime, outBytes);
+          showToast('画像を軽量化して文字列に変換しました (' + formatBytes(outBytes.length) + ')');
+        };
+        img.onerror = function () {
+          URL.revokeObjectURL(url);
+          loadBytesIntoEncoder(file.name, file.type, originalBytes);
+        };
+        img.src = url;
+      }
+
+      function handleUserFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          const bytes = new Uint8Array(e.target.result);
+          const mime = file.type || detectMimeFromBytes(bytes);
+          if (mime.startsWith('image/')) {
+            processImageWithOptimization(file, bytes);
+          } else {
+            loadBytesIntoEncoder(file.name, mime, bytes);
+            showToast('「' + file.name + '」を文字列に変換しました');
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      }
+
+      // ==================== BUILT-IN SAMPLE & SYNTH GENERATORS ====================
+      function createWavBytesFromSamples(samples, sampleRate) {
+        const numSamples = samples.length;
+        const buffer = new ArrayBuffer(44 + numSamples * 2);
+        const view = new DataView(buffer);
+
+        function writeStr(offset, str) {
+          for (let i = 0; i < str.length; i++) {
+            view.setUint8(offset + i, str.charCodeAt(i));
+          }
+        }
+
+        writeStr(0, 'RIFF');
+        view.setUint32(4, 36 + numSamples * 2, true);
+        writeStr(8, 'WAVE');
+        writeStr(12, 'fmt ');
+        view.setUint32(16, 16, true); // PCM chunk size
+        view.setUint16(20, 1, true);  // PCM format
+        view.setUint16(22, 1, true);  // Mono
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeStr(36, 'data');
+        view.setUint32(40, numSamples * 2, true);
+
+        for (let i = 0; i < numSamples; i++) {
+          const s = Math.max(-1, Math.min(1, samples[i]));
+          view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        }
+        return new Uint8Array(buffer);
+      }
+
+      function evalOsc(waveType, phase) {
+        const p = phase % (2 * Math.PI);
+        if (waveType === 'square') return p < Math.PI ? 0.8 : -0.8;
+        if (waveType === 'triangle') return (2 / Math.PI) * Math.asin(Math.sin(p));
+        if (waveType === 'sawtooth') return (p / Math.PI) - 1;
+        return Math.sin(p);
+      }
+
+      function synthesizePresetSound(preset, waveType, baseFreq, durationSec) {
+        const sampleRate = 22050;
+        const totalSamples = Math.floor(sampleRate * durationSec);
+        const samples = new Float32Array(totalSamples);
+        let phase = 0;
+
+        for (let i = 0; i < totalSamples; i++) {
+          const t = i / sampleRate;
+          const progress = i / totalSamples;
+          let freq = baseFreq;
+
+          if (preset === 'chime') {
+            freq = progress < 0.45 ? baseFreq : baseFreq * 1.25;
+          } else if (preset === 'buzzer') {
+            const gap = (progress > 0.42 && progress < 0.52);
+            freq = gap ? 0 : baseFreq * 0.35;
+          } else if (preset === 'jump') {
+            freq = baseFreq * (0.6 + progress * 1.3);
+          } else if (preset === 'coin') {
+            freq = progress < 0.25 ? 987.77 : 1318.51;
+          } else if (preset === 'levelup') {
+            if (progress < 0.33) freq = baseFreq;
+            else if (progress < 0.66) freq = baseFreq * 1.25;
+            else freq = baseFreq * 1.5;
+          }
+
+          const env = Math.min(1, i / (sampleRate * 0.015)) * Math.pow(1 - progress, 0.7);
+          if (freq > 0) {
+            phase += (2 * Math.PI * freq) / sampleRate;
+            samples[i] = evalOsc(waveType, phase) * env * 0.65;
+          } else {
+            samples[i] = 0;
+          }
+        }
+        return createWavBytesFromSamples(samples, sampleRate);
+      }
+
+      function generateStampPngBytes(text, bgColor, shape, callback) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 240;
+        canvas.height = 240;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, 240, 240);
+
+        if (shape === 'rounded') {
+          ctx.fillStyle = bgColor;
+          ctx.beginPath();
+          ctx.roundRect(16, 16, 208, 208, 42);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+          ctx.lineWidth = 6;
+          ctx.stroke();
+        } else if (shape === 'circle') {
+          ctx.fillStyle = bgColor;
+          ctx.beginPath();
+          ctx.arc(120, 120, 102, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 6;
+          ctx.stroke();
+        } else if (shape === 'seal') {
+          ctx.strokeStyle = bgColor;
+          ctx.lineWidth = 10;
+          ctx.beginPath();
+          ctx.arc(120, 120, 96, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(120, 120, 84, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = shape === 'seal' ? bgColor : '#ffffff';
+        ctx.font = 'bold 46px "Inter", "Hiragino Sans", "Noto Sans JP", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text || 'OK!', 120, 124);
+
+        const dataUri = canvas.toDataURL('image/png');
+        const b64 = dataUri.split(',')[1];
+        callback(base64ToUint8(b64));
+      }
+
+      // ==================== DECODE LOGIC (STRING -> MEDIA) ====================
+      function decodeFromInput() {
+        const rawInput = decodeInputText.value.trim();
+        if (!rawInput) {
+          showToast('復元する文字列を入力してください', 'error');
+          return;
+        }
+
+        try {
+          let detectedMime = manualMimeSelect.value;
+          let bytes = null;
+
+          // Check if input is Data URI
+          if (rawInput.startsWith('data:')) {
+            const commaIdx = rawInput.indexOf(',');
+            if (commaIdx === -1) throw new Error('Data URIの形式が正しくありません');
+            const header = rawInput.slice(5, commaIdx);
+            const dataPart = rawInput.slice(commaIdx + 1);
+            const mimeMatch = header.split(';')[0];
+            if (detectedMime === 'auto' && mimeMatch) {
+              detectedMime = mimeMatch;
+            }
+            if (header.includes(';base64')) {
+              bytes = base64ToUint8(dataPart);
+            } else {
+              const decodedText = decodeURIComponent(dataPart);
+              bytes = new TextEncoder().encode(decodedText);
+            }
+          } else if (/^[0-9A-Fa-f\s,]+$/.test(rawInput) && rawInput.includes(' ')) {
+            // Hex string input
+            const hexTokens = rawInput.trim().split(/[\s,]+/);
+            bytes = new Uint8Array(hexTokens.map(function (h) { return parseInt(h, 16) || 0; }));
+          } else {
+            // Extract base64 if wrapped in HTML tag or JS string
+            let candidate = rawInput;
+            const dataUriMatch = rawInput.match(/data:([a-zA-Z0-9/+.-]+);base64,([A-Za-z0-9+/=]+)/);
+            if (dataUriMatch) {
+              if (detectedMime === 'auto') detectedMime = dataUriMatch[1];
+              candidate = dataUriMatch[2];
+            }
+            bytes = base64ToUint8(candidate);
+          }
+
+          if (detectedMime === 'auto') {
+            detectedMime = detectMimeFromBytes(bytes);
+          }
+
+          const rawB64 = uint8ToBase64(bytes);
+          const dataUri = 'data:' + detectedMime + ';base64,' + rawB64;
+          const magicBytes = Array.from(bytes.slice(0, 8)).map(function (b) {
+            return b.toString(16).padStart(2, '0').toUpperCase();
+          }).join(' ');
+
+          state.decodedItem = {
+            mime: detectedMime,
+            dataUri: dataUri,
+            size: bytes.length,
+            magicHex: magicBytes,
+            ext: mimeToExtension(detectedMime)
+          };
+
+          decodedMimeBadge.textContent = detectedMime;
+          decodedSizeInfo.textContent = formatBytes(bytes.length);
+          decodedMagicInfo.textContent = magicBytes || '-';
+          decodeStatusText.textContent = '文字列からデータを正常に復元しました';
+
+          decodedImagePreview.classList.add('hidden');
+          decodedAudioWrap.classList.add('hidden');
+          decodedPlaceholder.classList.add('hidden');
+
+          if (detectedMime.startsWith('image/')) {
+            decodedImagePreview.src = dataUri;
+            decodedImagePreview.classList.remove('hidden');
+          } else if (detectedMime.startsWith('audio/')) {
+            decodedAudioPlayer.src = dataUri;
+            decodedAudioWrap.classList.remove('hidden');
+          } else {
+            decodedPlaceholder.textContent = 'バイナリデータ (' + detectedMime + ' / ' + formatBytes(bytes.length) + ') を復元しました。下のボタンから保存できます。';
+            decodedPlaceholder.classList.remove('hidden');
+          }
+
+          showToast('データを復元しました (' + detectedMime + ')');
+        } catch (err) {
+          decodeStatusText.textContent = 'エラー: 有効なBase64またはHex文字列ではありません';
+          showToast('文字列の復元に失敗しました。形式を確認してください', 'error');
+        }
+      }
+
+      // ==================== EVENT LISTENERS ====================
+      dropZone.addEventListener('click', function () {
+        fileInput.click();
+      });
+
+      fileInput.addEventListener('change', function (e) {
+        if (e.target.files && e.target.files[0]) {
+          handleUserFile(e.target.files[0]);
+        }
+      });
+
+      dropZone.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        dropZone.classList.add('drop-active');
+      });
+
+      dropZone.addEventListener('dragleave', function () {
+        dropZone.classList.remove('drop-active');
+      });
+
+      dropZone.addEventListener('drop', function (e) {
+        e.preventDefault();
+        dropZone.classList.remove('drop-active');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          handleUserFile(e.dataTransfer.files[0]);
+        }
+      });
+
+      // Paste image from clipboard anywhere on page
+      window.addEventListener('paste', function (e) {
+        if (!e.clipboardData || !e.clipboardData.items) return;
+        const items = e.clipboardData.items;
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf('image') !== -1 || items[i].type.indexOf('audio') !== -1) {
+            const file = items[i].getAsFile();
+            if (file) {
+              switchView('encode');
+              handleUserFile(file);
+              break;
+            }
+          }
+        }
+      });
+
+      // Sample buttons
+      sampleBadgeBtn.addEventListener('click', function () {
+        generateStampPngBytes('SCIENCE🧪', '#0284c7', 'rounded', function (bytes) {
+          loadBytesIntoEncoder('sample_badge.png', 'image/png', bytes);
+          showToast('サンプル画像 (PNG) を生成・変換しました');
+        });
+      });
+
+      sampleChimeBtn.addEventListener('click', function () {
+        const wavBytes = synthesizePresetSound('chime', 'sine', 660, 0.45);
+        loadBytesIntoEncoder('correct_chime.wav', 'audio/wav', wavBytes);
+        showToast('サンプル正解音 (WAV) を生成・変換しました');
+      });
+
+      sampleJumpBtn.addEventListener('click', function () {
+        const wavBytes = synthesizePresetSound('jump', 'square', 440, 0.35);
+        loadBytesIntoEncoder('retro_jump.wav', 'audio/wav', wavBytes);
+        showToast('レトロ効果音 (WAV) を生成・変換しました');
+      });
+
+      sampleSvgBtn.addEventListener('click', function () {
+        const svgStr = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">' +
+          '<defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">' +
+          '<stop offset="0%" stop-color="#38bdf8"/><stop offset="100%" stop-color="#6366f1"/></linearGradient></defs>' +
+          '<rect x="15" y="15" width="170" height="170" rx="36" fill="url(#g)"/>' +
+          '<circle cx="100" cy="85" r="32" fill="none" stroke="#fff" stroke-width="8"/>' +
+          '<path d="M60 150 C60 122 140 122 140 150" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>' +
+          '</svg>';
+        const bytes = new TextEncoder().encode(svgStr);
+        loadBytesIntoEncoder('vector_icon.svg', 'image/svg+xml', bytes);
+        showToast('サンプルベクター画像 (SVG) を変換しました');
+      });
+
+      // Image optimization controls
+      enableImageOptimize.addEventListener('change', function () {
+        state.optimizeImage = enableImageOptimize.checked;
+        if (state.optimizeImage) {
+          imageOptimizeControls.classList.remove('opacity-50', 'pointer-events-none');
+        } else {
+          imageOptimizeControls.classList.add('opacity-50', 'pointer-events-none');
+        }
+      });
+
+      optQualityRange.addEventListener('input', function () {
+        optQualityLabel.textContent = optQualityRange.value + '%';
+      });
+
+      // Format buttons
+      formatSelectorGroup.addEventListener('click', function (e) {
+        const btn = e.target.closest('.format-btn');
+        if (!btn) return;
+        state.outputFormat = btn.getAttribute('data-format');
+        const allBtns = formatSelectorGroup.querySelectorAll('.format-btn');
+        allBtns.forEach(function (b) {
+          b.className = 'format-btn px-2.5 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:text-white transition';
+        });
+        btn.className = 'format-btn px-2.5 py-2 rounded-lg text-xs font-semibold bg-sky-500 text-white transition shadow';
+        renderEncodeView();
+      });
+
+      lineWrapToggle.addEventListener('change', function () {
+        state.lineWrap = lineWrapToggle.checked;
+        renderEncodeView();
+      });
+
+      // Copy & Download actions
+      copyOutputBtn.addEventListener('click', function () {
+        const text = encodedOutputText.value;
+        if (!text) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () {
+            showToast('クリップボードにコピーしました！');
+          }).catch(function () {
+            encodedOutputText.select();
+            document.execCommand('copy');
+            showToast('クリップボードにコピーしました！');
+          });
+        } else {
+          encodedOutputText.select();
+          document.execCommand('copy');
+          showToast('クリップボードにコピーしました！');
+        }
+      });
+
+      downloadTxtBtn.addEventListener('click', function () {
+        const text = encodedOutputText.value;
+        if (!text || !state.currentItem) return;
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const baseName = state.currentItem.name.replace(/\.[^.]+$/, '');
+        a.href = url;
+        a.download = baseName + '_' + state.outputFormat + '.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('テキストファイル (.txt) を保存しました');
+      });
+
+      sendToDecodeBtn.addEventListener('click', function () {
+        if (!state.currentItem) return;
+        decodeInputText.value = state.currentItem.dataUri;
+        switchView('decode');
+        decodeFromInput();
+      });
+
+      clearHistoryBtn.addEventListener('click', function () {
+        state.history = state.currentItem ? [state.currentItem] : [];
+        renderHistoryList();
+        showToast('履歴を整理しました');
+      });
+
+      // Decode view actions
+      runDecodeBtn.addEventListener('click', decodeFromInput);
+      manualMimeSelect.addEventListener('change', function () {
+        if (decodeInputText.value.trim()) decodeFromInput();
+      });
+      clearDecodeInputBtn.addEventListener('click', function () {
+        decodeInputText.value = '';
+        decodeStatusText.textContent = '文字列を入力すると自動で判別・復元します';
+        decodedMimeBadge.textContent = '-';
+        decodedSizeInfo.textContent = '-';
+        decodedMagicInfo.textContent = '-';
+        decodedImagePreview.classList.add('hidden');
+        decodedAudioWrap.classList.add('hidden');
+        decodedPlaceholder.textContent = '左側のボックスに文字列を貼り付けるか、「復元する」を押してください';
+        decodedPlaceholder.classList.remove('hidden');
+      });
+
+      downloadDecodedFileBtn.addEventListener('click', function () {
+        if (!state.decodedItem) {
+          showToast('先に文字列を復元してください', 'error');
+          return;
+        }
+        const a = document.createElement('a');
+        a.href = state.decodedItem.dataUri;
+        a.download = 'restored_media.' + state.decodedItem.ext;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        showToast('復元ファイルを保存しました');
+      });
+
+      // Synth & Icon generator view actions
+      synthFreqRange.addEventListener('input', function () {
+        synthFreqVal.textContent = synthFreqRange.value + ' Hz';
+      });
+
+      synthDurationRange.addEventListener('input', function () {
+        synthDurationVal.textContent = synthDurationRange.value + ' 秒';
+      });
+
+      generateSynthBtn.addEventListener('click', function () {
+        const preset = synthPresetSelect.value;
+        const wave = synthWaveType.value;
+        const freq = parseFloat(synthFreqRange.value);
+        const dur = parseFloat(synthDurationRange.value);
+        const wavBytes = synthesizePresetSound(preset, wave, freq, dur);
+        loadBytesIntoEncoder('synth_' + preset + '.wav', 'audio/wav', wavBytes);
+        switchView('encode');
+        showToast('効果音を生成して文字列に変換しました！');
+      });
+
+      generateStampBtn.addEventListener('click', function () {
+        const text = stampTextInput.value.trim() || 'OK';
+        const color = stampBgColor.value;
+        const shape = stampShapeSelect.value;
+        generateStampPngBytes(text, color, shape, function (bytes) {
+          loadBytesIntoEncoder('stamp_' + shape + '.png', 'image/png', bytes);
+          switchView('encode');
+          showToast('スタンプ画像を生成して文字列に変換しました！');
+        });
+      });
+
+      // ==================== INITIALIZE WITH DEFAULT SAMPLE ====================
+      window.addEventListener('DOMContentLoaded', function () {
+        // Pre-populate a sound effect in history and an initial icon badge in main view
+        const chimeBytes = synthesizePresetSound('chime', 'sine', 660, 0.42);
+        loadBytesIntoEncoder('sample_chime.wav', 'audio/wav', chimeBytes);
+
+        generateStampPngBytes('合格💮', '#0284c7', 'rounded', function (pngBytes) {
+          loadBytesIntoEncoder('sample_stamp.png', 'image/png', pngBytes);
+          // Pre-fill decode view with the sample Data URI so Decode tab also works out-of-the-box
+          if (state.currentItem) {
+            decodeInputText.value = state.currentItem.dataUri;
+            decodeFromInput();
+          }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
